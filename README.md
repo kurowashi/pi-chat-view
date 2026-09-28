@@ -108,6 +108,7 @@ ref を固定する場合は `pi install git:github.com/kurowashi/pi-chat-view@<
 - 兄弟一覧は `name (id)`、`target_run_id= / name= / agent=`、`target_session_id= / name= / agent=` の3形式を読みます
 - 同定に使うのはファイル名のセッション id と兄弟一覧だけです。ビューアは親セッションを読まないため、pi-spawn が返す session id / entry id は使いません
 - 過去の位置から再開した子（`resume_entry_id`）は、最後の entry から `parentId` をたどった分岐だけを表示します
+- 兄弟一覧を解釈できない場合は、一覧とタイムラインに警告を表示します（pi-spawn の形式変更の検知）
 - 一覧は最終更新が新しい順で、既定 100 件です。`?limit=` で最大 1000 件まで増やせます
 
 ## 設定

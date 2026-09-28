@@ -54,6 +54,7 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 | 配送ヘッダーは `from_run_id=` と `from_session_id=` の両方を除く | `test/unit/transcript.test.ts` | `src/transcript.ts` の `stripDeliveryHeader` |
 | 分岐した transcript は最後の entry の分岐だけを表示する | `test/unit/transcript.test.ts` | `src/transcript.ts` の `activeBranch` |
 | 分岐を読み取れないファイルは書かれた順に表示する | `test/unit/transcript.test.ts` | `src/transcript.ts` の `activeBranch` |
+| 解釈できない兄弟一覧はスレッドに警告を付ける | `test/unit/format-compat.test.ts` | `src/transcript.ts` の `unparsedBriefing` |
 | 継承した親の履歴を子の会話として表示しない | `test/unit/transcript.test.ts` | `src/transcript.ts` の `scanHead` / `isInherited` |
 | 親セッションが無いときは継承を切り分けずに読み進める | `test/unit/transcript.test.ts` | `src/transcript.ts` の `taskPromptStops` |
 | 指示の本文から兄弟一覧を除く | `test/unit/transcript.test.ts` | `src/transcript.ts` の `stripBriefing` |

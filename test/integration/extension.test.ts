@@ -95,6 +95,7 @@ test("the command starts the view, serves the directory, and stops on shutdown",
 						],
 						firstMs: Date.parse("2026-09-28T12:11:23.882Z"),
 						lastMs: Date.parse("2026-09-28T12:11:40.000Z"),
+						unparsedBriefing: false,
 					},
 				],
 			});

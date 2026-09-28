@@ -72,6 +72,8 @@ export interface ChildFile {
 	 * inherited, or when the boundary could not be established.
 	 */
 	ownFrom: number;
+	/** True when the file carried a sibling briefing this reader could not parse. */
+	unparsedBriefing: boolean;
 }
 
 export interface ThreadSummary {
@@ -80,6 +82,14 @@ export interface ThreadSummary {
 	participants: Participant[];
 	firstMs: number;
 	lastMs: number;
+	/**
+	 * A member carried a sibling briefing this reader could not parse.
+	 *
+	 * The briefing is the only link between siblings, so a silent format change
+	 * would split one conversation into several threads with no other symptom.
+	 * This flag is how the page can say so instead.
+	 */
+	unparsedBriefing: boolean;
 }
 
 /** One line of the merged timeline. */
@@ -220,6 +230,7 @@ function scanChildFile(path: string, id: string, parents: ParentIds): ChildFile 
 		lastMs: readTailTimestamp(path, stat.size),
 		refs: head.refs,
 		ownFrom: head.ownFrom,
+		unparsedBriefing: head.unparsedBriefing,
 	};
 }
 
@@ -230,13 +241,20 @@ interface HeadScan {
 	createdMs: number | undefined;
 	refs: SiblingRef[];
 	ownFrom: number;
+	/** True when the briefing marker was there but no peer could be read from it. */
+	unparsedBriefing: boolean;
 }
 
 /** The session header, the sibling briefing, and where this run's own messages start. */
 function scanHead(path: string, parents: ParentIds): HeadScan {
-	const state: HeadState = { refs: [], ownFrom: -1, messages: 0, lines: 0 };
+	const state: HeadState = { refs: [], ownFrom: -1, messages: 0, lines: 0, unparsedBriefing: false };
 	forEachLine(path, (line) => scanHeadLine(state, line, parents), HEAD_CHUNK_BYTES);
-	return { createdMs: state.createdMs, refs: state.refs, ownFrom: Math.max(state.ownFrom, 0) };
+	return {
+		createdMs: state.createdMs,
+		refs: state.refs,
+		ownFrom: Math.max(state.ownFrom, 0),
+		unparsedBriefing: state.unparsedBriefing,
+	};
 }
 
 interface HeadState {
@@ -246,6 +264,7 @@ interface HeadState {
 	ownFrom: number;
 	messages: number;
 	lines: number;
+	unparsedBriefing: boolean;
 }
 
 /** One line of the header scan; returns false to stop reading. */
@@ -293,11 +312,15 @@ function isInherited(state: HeadState, entry: Record<string, unknown>, parents: 
  */
 function taskPromptStops(state: HeadState, message: Record<string, unknown>, parents: ParentIds): boolean {
 	if (message["role"] !== "user") return false;
-	const briefing = extractBriefing(textOf(message["content"]));
+	const text = textOf(message["content"]);
+	const briefing = extractBriefing(text);
 	if (briefing.length > 0) {
 		state.refs = briefing;
 		return true;
 	}
+	// The marker without parsable peers means pi-spawn's format moved on; say so
+	// instead of quietly reading the siblings as separate conversations.
+	if (text.startsWith(BRIEFING_MARKER)) state.unparsedBriefing = true;
 	return state.parentPath === undefined || readEntryIds(state.parentPath, parents) !== undefined;
 }
 
@@ -421,6 +444,7 @@ function summarize(thread: ScannedThread): ThreadSummary {
 		participants: thread.participants,
 		firstMs: Math.min(...thread.files.map((file) => file.createdMs)),
 		lastMs: Math.max(...thread.files.map((file) => file.lastMs)),
+		unparsedBriefing: thread.files.some((file) => file.unparsedBriefing),
 	};
 }
 

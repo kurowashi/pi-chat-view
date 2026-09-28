@@ -190,6 +190,14 @@
 				color: var(--muted);
 				padding: 40px 0;
 			}
+			.warning {
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				color: var(--muted);
+				font-size: 12px;
+				padding: 8px 12px;
+				margin-bottom: 14px;
+			}
 			body:not(.show-reasoning) .reasoning,
 			body:not(.show-tools) .tool {
 				display: none;
@@ -318,6 +326,7 @@
 				state.labels = new Map(thread.participants.map((p) => [p.id, p.agent ? `${p.label} (${p.agent})` : p.label]));
 				const atBottom = timelineEl.scrollTop + timelineEl.clientHeight >= timelineEl.scrollHeight - 60;
 				timelineEl.replaceChildren();
+				if (thread.unparsedBriefing) timelineEl.append(briefingWarning());
 				if (thread.entries.length === 0) {
 					timelineEl.append(el("div", "empty", "このスレッドにはまだ発話がありません。"));
 					return;
@@ -339,13 +348,23 @@
 					const button = el("button");
 					button.setAttribute("aria-current", String(thread.id === state.thread));
 					const fresh = Date.now() - thread.lastMs < 90000 ? " ●" : "";
-					button.append(el("div", "range", `${clock(thread.firstMs).slice(-5)} – ${clock(thread.lastMs).slice(-5)}${fresh}`));
+					const warning = thread.unparsedBriefing ? " ⚠" : "";
+					button.append(el("div", "range", `${clock(thread.firstMs).slice(-5)} – ${clock(thread.lastMs).slice(-5)}${fresh}${warning}`));
 					button.append(el("div", "names", thread.participants.map((p) => p.label).join(" · ")));
 					button.addEventListener("click", () => {
 						location.hash = thread.id;
 					});
 					threadsEl.append(button);
 				}
+			}
+
+			/** Split threads say one thing: this reader no longer understands the sibling list. */
+			function briefingWarning() {
+				return el(
+					"div",
+					"warning",
+					"兄弟一覧を解釈できません。pi-spawn が宛先の形式を変えた可能性があります。",
+				);
 			}
 
 			async function refreshList() {
