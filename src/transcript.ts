@@ -255,17 +255,20 @@ function scanHeadLine(state: HeadState, line: string, parents: ParentIds): boole
 		return true;
 	}
 	if (entry["type"] !== "message") return true;
+	// The render path keeps only well-formed messages, so the scan counts only those:
+	// `ownFrom` is an index into that same list.
+	const message = asRecord(entry["message"]);
+	if (message === undefined || typeof message["role"] !== "string") return true;
 	// A forked prefix can be arbitrarily long and proves nothing about this file.
-	// It still counts: the render path indexes the same message list.
 	if (isInherited(state, entry, parents)) {
 		state.messages += 1;
 		return true;
 	}
 	// A system message is prompt plumbing, not conversation: the run's own messages start later.
-	if (state.ownFrom < 0 && asRecord(entry["message"])?.["role"] !== "system") state.ownFrom = state.messages;
+	if (state.ownFrom < 0 && message["role"] !== "system") state.ownFrom = state.messages;
 	state.messages += 1;
 	if (!countScannedLine(state)) return false;
-	return !taskPromptStops(state, entry, parents);
+	return !taskPromptStops(state, message, parents);
 }
 
 /** Budget for how much of a file the scan reads before it gives up. */
@@ -285,9 +288,8 @@ function isInherited(state: HeadState, entry: Record<string, unknown>, parents: 
  * later. Only a child whose parent file is gone has no provable boundary and
  * keeps looking; for it the briefing may sit behind an inherited prefix.
  */
-function taskPromptStops(state: HeadState, entry: Record<string, unknown>, parents: ParentIds): boolean {
-	const message = asRecord(entry["message"]);
-	if (message?.["role"] !== "user") return false;
+function taskPromptStops(state: HeadState, message: Record<string, unknown>, parents: ParentIds): boolean {
+	if (message["role"] !== "user") return false;
 	const briefing = extractBriefing(textOf(message["content"]));
 	if (briefing.length > 0) {
 		state.refs = briefing;

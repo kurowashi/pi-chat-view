@@ -370,6 +370,63 @@ test("a delivery is kept when the sibling transcript has no statement to match",
 	});
 });
 
+test("a malformed message entry does not shift the own-message boundary", () => {
+	withDir((dir) => {
+		const parent = join(dir, "parent.jsonl");
+		writeParentSession(parent, ["p1"]);
+		const lines = [
+			{
+				type: "session",
+				version: 3,
+				id: "zzzzzzzz",
+				timestamp: "2026-09-28T20:00:00.000Z",
+				cwd: "/tmp/project",
+				parentSession: parent,
+			},
+			{
+				type: "message",
+				id: "p1",
+				timestamp: "2026-09-28T19:00:00.000Z",
+				message: { role: "user", content: "inherited" },
+			},
+			// The render path drops this entry, so the scan must not count it either.
+			{ type: "message", id: "broken", timestamp: "2026-09-28T19:30:00.000Z" },
+			{
+				type: "message",
+				id: "task",
+				timestamp: "2026-09-28T20:00:01.000Z",
+				message: { role: "user", content: "Siblings you can message with message_agent: peer (yyyyyyyy)\n\nround one" },
+			},
+			{
+				type: "message",
+				id: "own",
+				timestamp: "2026-09-28T20:00:02.000Z",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "answers" }],
+					timestamp: Date.parse("2026-09-28T20:00:02.000Z"),
+				},
+			},
+		];
+		writeFileSync(
+			join(dir, "2026-09-28T20-00-00-000Z_zzzzzzzz.jsonl"),
+			`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+		);
+		writeChildSession(dir, {
+			id: "yyyyyyyy",
+			start: "2026-09-28T20:00:00.001Z",
+			briefing: "peer (zzzzzzzz)",
+			task: "listen",
+		});
+		const thread = readThread(dir, "yyyyyyyy+zzzzzzzz");
+		assert.ok(thread);
+		assert.deepEqual(
+			thread.entries.map((entry) => entry.text),
+			["listen", "round one", "answers"],
+		);
+	});
+});
+
 test("extractBriefing reads both briefing formats and ignores other text", () => {
 	assert.deepEqual(extractBriefing("unrelated"), []);
 	assert.deepEqual(extractBriefing("Siblings you can message with message_agent: \n\nnothing here"), []);

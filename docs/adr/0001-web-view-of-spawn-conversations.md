@@ -21,10 +21,10 @@ pi-spawn の子は `message_agent` で兄弟へ話しかけ、返信は次のタ
 pi-spawn 自身はこの用途を対象外にしました（[pi-spawn ADR 0005](https://github.com/kurowashi/pi-spawn/blob/main/docs/adr/0005-child-observability.md)）。
 完了後の子を開く手段は `pi --session <path>` だけで、TUI の `/spawn logs` は実行中のみを対象にします。
 
-公開されている第三者の Pi 用 Web ビューアを確認した限りでは、いずれもセッション1本を1ビューとして表示するもので、複数セッションを1本の時系列へマージするものはありませんでした（2026-09-28 時点）。
+2026-09-28 に確認した次の3例では、いずれもセッション1本を1ビューとして表示するもので、複数セッションを1本の時系列へマージする機能は確認できませんでした。
 確認した例: [pi-web](https://github.com/agegr/pi-web/)、[pi-sessions-viewer](https://github.com/ygncode/pi-sessions-viewer)、[sessions-viewer](https://github.com/skorotkiewicz/sessions-viewer)。
 
-実データでは、1回の会話が2ファイルに分かれ、`resume_run_id` のラウンドは同じ2ファイルへ追記されていました。
+2026-09-28 に実データを確認したところ、1回の会話は2ファイルに分かれ、`resume_run_id` のラウンドは同じ2ファイルへ追記されていました。
 また、resume 後の run id はファイル名のセッション id と一致しません（[実測メモ](#実測メモ)）。
 
 ## 決定
@@ -71,9 +71,11 @@ pi-spawn 自身はこの用途を対象外にしました（[pi-spawn ADR 0005](
 
 | 測定 | コマンド | 結果 |
 |---|---|---|
-| 子セッションの保存量 | `ls ~/.pi/agent/spawn-sessions \| wc -l` | 265 ファイル、43MB（2026-09-28） |
-| 親セッションの保存量 | `du -sh ~/.pi/agent/sessions` | 260MB、226 ファイル（2026-09-28） |
-| resume 後の run id の解決 | `SessionManager.findById(cwd, "98e5d8af", "<agentDir>/spawn-sessions")` | `undefined`（ファイルの header id は `f83c6332` のまま） |
+| 子セッション数 | `find ~/.pi/agent/spawn-sessions -maxdepth 1 -name '*.jsonl' \| wc -l` | 265（2026-09-28） |
+| 子セッション容量 | `du -sh ~/.pi/agent/spawn-sessions` | 43MB（2026-09-28） |
+| 親セッション数 | `find ~/.pi/agent/sessions -name '*.jsonl' \| wc -l` | 226（2026-09-28） |
+| 親セッション容量 | `du -sh ~/.pi/agent/sessions` | 260MB（2026-09-28） |
+| resume 後の run id の解決 | `SessionManager.findById(cwd, "98e5d8af", "<agentDir>/spawn-sessions")` | `undefined` |
 
 ## 代替案
 
@@ -85,7 +87,7 @@ pi-spawn 自身はこの用途を対象外にしました（[pi-spawn ADR 0005](
 | run id を親セッションの走査で解決する | 全走査が必要で、run id は保存先と一致しない |
 | 静的 HTML を書き出す | 実行中の追記が見えず、マージもできない |
 | SSE / WebSocket で逐次更新する | 接続管理・再接続・ハートビートの実装が増える |
-| 既存の第三者ビューアを併用する | 単一セッション表示で、兄弟の会話は1本にならない |
+| 既存の第三者ビューアを併用する | 2026-09-28 に確認した3例では、兄弟会話の統合機能を確認できなかった |
 | ブラウザを自動で開く | 副作用を増やさない。URL の通知で足りる |
 | reasoning を要約・省略する | 表示は記録に忠実であるべきで、要約はモデル呼び出しを持ち込む |
 | サーバー側にファイル内容のキャッシュを持つ | リクエスト間の状態が増える。必要な I/O はこの規模では問題にならない |

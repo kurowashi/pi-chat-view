@@ -290,7 +290,8 @@
 			}
 
 			function renderEntry(entry) {
-				const node = el("div", `entry ${entry.kind}`);				node.style.setProperty("--hue", hueOf(entry.agent));
+				const node = el("div", `entry ${entry.kind}`);
+				node.style.setProperty("--hue", hueOf(entry.agent));
 				const meta = el("div", "meta");
 				meta.append(el("span", "who", state.labels.get(entry.agent) ?? entry.agent));
 				meta.append(el("span", "time", clock(entry.ts)));
