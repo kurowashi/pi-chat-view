@@ -35,8 +35,8 @@ const MAX_HEAD_LINES = 200;
 /** The sibling list pi-spawn prepends to a child's task. */
 const BRIEFING_MARKER = "Siblings you can message with message_agent:";
 
-/** The header pi-spawn puts in front of a delivered message. */
-const DELIVERY_HEADER = /^message_agent from_run_id=\S+ name=(?:"(?:[^"\\]|\\.)*"|[^\n]+)\n\n/;
+/** The header pi-spawn puts in front of a delivered message; the key is a run id in older versions. */
+const DELIVERY_HEADER = /^message_agent from_(?:run|session)_id=\S+ name=(?:"(?:[^"\\]|\\.)*"|[^\n]+)\n\n/;
 
 /** What one timeline line is: sibling speech, the agent's prose, its reasoning, a task, or a tool call. */
 export type EntryKind = "statement" | "narration" | "thinking" | "instruction" | "tool";
@@ -114,7 +114,10 @@ export function readThread(dir: string, id: string): ThreadTimeline | undefined 
 	const thread = buildThreads(scanSpawnDir(dir)).find((candidate) => candidate.id === id);
 	if (thread === undefined) return undefined;
 	const labels = referenceLabels(thread.files);
-	const parsed = thread.files.map((file) => ({ file, messages: parseMessages(file.path).slice(file.ownFrom) }));
+	const parsed = thread.files.map((file) => ({
+		file,
+		messages: activeBranch(parseMessages(file.path).slice(file.ownFrom)),
+	}));
 	const outbound = outboundTexts(parsed);
 	const entries = parsed
 		.flatMap(({ file, messages }, fileIndex) =>
@@ -130,9 +133,9 @@ export function readThread(dir: string, id: string): ThreadTimeline | undefined 
 /** A quoted JSON string or a bare token, as a briefing value. */
 const BRIEFING_VALUE = '(?:"(?:[^"\\\\]|\\\\.)*"|\\S+)';
 
-/** The briefing block: `- target_run_id=<id> name=<label> agent=<agent>` per peer. */
+/** The briefing block: `- target_<key>=<id> name=<label> agent=<agent>` per peer, `run` or `session`. */
 const KEYED_BRIEFING = new RegExp(
-	`- target_run_id=(\\S+)\\s+name=(${BRIEFING_VALUE})\\s+agent=(${BRIEFING_VALUE})`,
+	`- target_(?:run|session)_id=(\\S+)\\s+name=(${BRIEFING_VALUE})\\s+agent=(${BRIEFING_VALUE})`,
 	"g",
 );
 
@@ -454,6 +457,9 @@ function participantsOf(files: readonly ChildFile[]): Participant[] {
 /* ------------------------------------------------------------------ */
 
 interface ParsedMessage {
+	/** Entry id and its parent, so a branched transcript can be read along one branch. */
+	id: string | undefined;
+	parentId: string | undefined;
 	role: string;
 	ts: number;
 	content: unknown;
@@ -469,6 +475,8 @@ function parseMessages(path: string): ParsedMessage[] {
 		const role = message["role"];
 		if (typeof role !== "string") return true;
 		messages.push({
+			id: typeof entry["id"] === "string" ? entry["id"] : undefined,
+			parentId: typeof entry["parentId"] === "string" ? entry["parentId"] : undefined,
 			role,
 			ts: finiteMs(Date.parse(String(entry["timestamp"] ?? ""))) ?? finiteMs(Number(message["timestamp"])) ?? 0,
 			content: message["content"],
@@ -476,6 +484,35 @@ function parseMessages(path: string): ParsedMessage[] {
 		return true;
 	});
 	return messages;
+}
+
+/**
+ * The messages on the branch that ends the file.
+ *
+ * A transcript is a tree: `resume_entry_id` branches at the recorded entry, so
+ * an abandoned branch stays in the file. Following `parentId` back from the last
+ * entry keeps the abandoned turns out of the timeline. A file whose entries do
+ * not form one chain from its first message (older sessions, broken lines) is
+ * read as written instead of guessed at.
+ */
+function activeBranch(messages: readonly ParsedMessage[]): ParsedMessage[] {
+	const byId = new Map<string, number>();
+	for (const [index, message] of messages.entries()) {
+		if (message.id === undefined || byId.has(message.id)) return [...messages];
+		byId.set(message.id, index);
+	}
+	const branch: number[] = [];
+	const visited = new Set<number>();
+	let current: number | undefined = messages.length - 1;
+	while (current !== undefined && !visited.has(current)) {
+		visited.add(current);
+		branch.push(current);
+		const parentId: string | undefined = messages[current]?.parentId;
+		current = parentId === undefined ? undefined : byId.get(parentId);
+	}
+	branch.reverse();
+	if (branch[0] !== 0) return [...messages];
+	return branch.flatMap((index) => messages[index] ?? []);
 }
 
 /**
@@ -547,7 +584,7 @@ function toolEntry(
 	if (name !== "message_agent") {
 		return { ...base, kind: "tool", text: "", summary: `${name} ${digest(args)}` };
 	}
-	const target = typeof args["target_run_id"] === "string" ? args["target_run_id"] : String(args["to"] ?? "");
+	const target = firstString(args["target_session_id"], args["target_run_id"], args["to"]);
 	const toLabel = labels.get(target);
 	return {
 		...base,
@@ -629,6 +666,12 @@ function unquote(token: string): string {
 	} catch {
 		return token.replace(/^"|"$/g, "");
 	}
+}
+
+/** The first argument that is a string, or the empty string. */
+function firstString(...values: readonly unknown[]): string {
+	for (const value of values) if (typeof value === "string") return value;
+	return "";
 }
 
 function finiteMs(value: number): number | undefined {

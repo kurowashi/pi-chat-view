@@ -48,9 +48,12 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 | 制約 | 検証 | 定義・実装箇所 |
 |---|---|---|
 | スレッドは兄弟一覧の参照の連結成分。存在するファイルの id だけを辺にする | `test/unit/transcript.test.ts` | `src/transcript.ts` の `buildThreads` |
-| 兄弟一覧は旧形式 `name (id)` と KV 形式 `target_run_id= / name= / agent=` を読む | `test/unit/transcript.test.ts` | `src/transcript.ts` の `extractBriefing` |
+| 兄弟一覧は `name (id)` と KV 形式 `target_run_id= / target_session_id=` を読む | `test/unit/transcript.test.ts` | `src/transcript.ts` の `extractBriefing` |
 | 表示名は他ファイルの兄弟一覧から復元し、無ければ id を使う | `test/unit/transcript.test.ts` | `src/transcript.ts` の `referenceLabels` |
 | 配送の複製は、本文が一致する送信側の発言がある場合だけ除外する | `test/unit/transcript.test.ts` | `src/transcript.ts` の `filterDeliveries` |
+| 配送ヘッダーは `from_run_id=` と `from_session_id=` の両方を除く | `test/unit/transcript.test.ts` | `src/transcript.ts` の `stripDeliveryHeader` |
+| 分岐した transcript は最後の entry の分岐だけを表示する | `test/unit/transcript.test.ts` | `src/transcript.ts` の `activeBranch` |
+| 分岐を読み取れないファイルは書かれた順に表示する | `test/unit/transcript.test.ts` | `src/transcript.ts` の `activeBranch` |
 | 継承した親の履歴を子の会話として表示しない | `test/unit/transcript.test.ts` | `src/transcript.ts` の `scanHead` / `isInherited` |
 | 親セッションが無いときは継承を切り分けずに読み進める | `test/unit/transcript.test.ts` | `src/transcript.ts` の `taskPromptStops` |
 | 指示の本文から兄弟一覧を除く | `test/unit/transcript.test.ts` | `src/transcript.ts` の `stripBriefing` |
@@ -86,3 +89,4 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 | 実行中の追記 | 子が動いている間にブラウザを開き、新しい発言が1.5秒以内に現れること |
 | 終了時の停止 | Pi を終了した後に URL が開けなくなること |
 | 表示の崩れ | 長文・改行・引用符・絵文字を含む発言が崩れず、HTML として解釈されないこと |
+| 分岐 | `resume_entry_id` で過去の位置から再開し、破棄した分岐が表示されないこと |

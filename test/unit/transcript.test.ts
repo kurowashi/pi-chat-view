@@ -427,6 +427,139 @@ test("a malformed message entry does not shift the own-message boundary", () => 
 	});
 });
 
+test("the current session-id keys are read like the older run-id ones", () => {
+	withDir((dir) => {
+		writeChildSession(dir, {
+			id: "aaaaaaaa",
+			start: "2026-09-28T21:00:00.000Z",
+			briefing: '- target_session_id=bbbbbbbb name="bob" agent="bob"',
+			events: [
+				{
+					type: "delivery",
+					at: "2026-09-28T21:00:05.000Z",
+					from: "bbbbbbbb",
+					text: "hello alice",
+					key: "from_session_id",
+				},
+				{
+					type: "assistant",
+					at: "2026-09-28T21:00:10.000Z",
+					send: { to: "bbbbbbbb", text: "hello bob", key: "target_session_id" },
+				},
+			],
+		});
+		writeChildSession(dir, {
+			id: "bbbbbbbb",
+			start: "2026-09-28T21:00:00.001Z",
+			briefing: '- target_session_id=aaaaaaaa name="alice" agent="alice"',
+			events: [
+				{
+					type: "assistant",
+					at: "2026-09-28T21:00:05.000Z",
+					send: { to: "aaaaaaaa", text: "hello alice", key: "target_session_id" },
+				},
+			],
+		});
+		const threads = listThreads(dir);
+		assert.equal(threads.length, 1, "the session-id briefing must link the pair");
+		assert.deepEqual(
+			threads[0]?.participants.map((participant) => participant.label),
+			["alice", "bob"],
+		);
+		const thread = readThread(dir, "aaaaaaaa+bbbbbbbb");
+		assert.ok(thread);
+		assert.deepEqual(
+			thread.entries.filter((entry) => entry.kind === "statement").map((entry) => [entry.text, entry.toLabel]),
+			[
+				["hello alice", "alice"],
+				["hello bob", "bob"],
+			],
+		);
+		assert.equal(
+			thread.entries.filter((entry) => entry.text === "hello alice").length,
+			1,
+			"the from_session_id header must be stripped before matching",
+		);
+	});
+});
+
+test("only the branch that ends the transcript appears in the timeline", () => {
+	withDir((dir) => {
+		const message = (id: string, parentId: string | null, at: string, content: unknown) => ({
+			type: "message",
+			id,
+			parentId,
+			timestamp: at,
+			message: { role: content === null ? "system" : "assistant", content, timestamp: Date.parse(at) },
+		});
+		const lines: unknown[] = [
+			{ type: "session", version: 3, id: "bbbbbbbb", timestamp: "2026-09-28T22:00:00.000Z", cwd: "/tmp/project" },
+			{
+				type: "message",
+				id: "s1",
+				parentId: null,
+				timestamp: "2026-09-28T22:00:00.000Z",
+				message: { role: "system", content: "" },
+			},
+			{
+				type: "message",
+				id: "t1",
+				parentId: "s1",
+				timestamp: "2026-09-28T22:00:01.000Z",
+				message: { role: "user", content: "do the task" },
+			},
+			message("a1", "t1", "2026-09-28T22:00:02.000Z", [{ type: "text", text: "first answer" }]),
+			message("a2", "a1", "2026-09-28T22:00:03.000Z", [{ type: "text", text: "abandoned" }]),
+			message("a3", "a1", "2026-09-28T22:00:04.000Z", [{ type: "text", text: "retry" }]),
+		];
+		writeFileSync(
+			join(dir, "2026-09-28T22-00-00-000Z_bbbbbbbb.jsonl"),
+			`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+		);
+		assert.deepEqual(
+			readThread(dir, "bbbbbbbb")?.entries.map((entry) => entry.text),
+			["do the task", "first answer", "retry"],
+		);
+	});
+});
+
+test("a transcript that is not one chain is read as written", () => {
+	withDir((dir) => {
+		const lines: unknown[] = [
+			{ type: "session", version: 1, id: "cccccccc", timestamp: "2026-09-28T23:00:00.000Z", cwd: "/tmp/project" },
+			{
+				type: "message",
+				id: "m1",
+				parentId: null,
+				timestamp: "2026-09-28T23:00:01.000Z",
+				message: { role: "user", content: "do the task" },
+			},
+			{
+				type: "message",
+				id: "m2",
+				parentId: null,
+				timestamp: "2026-09-28T23:00:02.000Z",
+				message: { role: "assistant", content: [{ type: "text", text: "one" }] },
+			},
+			{
+				type: "message",
+				id: "m3",
+				parentId: null,
+				timestamp: "2026-09-28T23:00:03.000Z",
+				message: { role: "assistant", content: [{ type: "text", text: "two" }] },
+			},
+		];
+		writeFileSync(
+			join(dir, "2026-09-28T23-00-00-000Z_cccccccc.jsonl"),
+			`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+		);
+		assert.deepEqual(
+			readThread(dir, "cccccccc")?.entries.map((entry) => entry.text),
+			["do the task", "one", "two"],
+		);
+	});
+});
+
 test("extractBriefing reads both briefing formats and ignores other text", () => {
 	assert.deepEqual(extractBriefing("unrelated"), []);
 	assert.deepEqual(extractBriefing("Siblings you can message with message_agent: \n\nnothing here"), []);

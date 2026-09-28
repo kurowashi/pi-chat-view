@@ -18,18 +18,26 @@ export type ChildEvent =
 			thinking?: string;
 			narration?: string;
 			/** A `message_agent` call. The peer's delivery is a separate event. */
-			send?: { to: string; text: string };
+			send?: { to: string; text: string; key?: string };
 			/** Any other tool call. */
 			call?: { name: string; args: Record<string, unknown> };
 	  }
 	/** A message copied from the parent's session, as `inheritConversation` writes it. */
 	| { type: "inherited"; at: string; id: string; role: "user" | "assistant"; text: string }
-	| { type: "delivery"; at: string; from: string; text: string; labelled?: boolean }
+	| {
+			type: "delivery";
+			at: string;
+			from: string;
+			text: string;
+			labelled?: boolean;
+			/** Header key, when a test pins the newer `from_session_id` form. */
+			key?: string;
+	  }
 	| { type: "prompt"; at: string; text: string }
 	| { type: "compaction"; at: string };
 
 export interface ChildScript {
-	/** Session id, also the run id of the run that created the file. */
+	/** Session id, which names the session file. */
 	id: string;
 	/** ISO timestamp of the session header; also names the file. */
 	start: string;
@@ -127,7 +135,9 @@ function eventEntries(event: ChildEvent, index: number): unknown[] {
 }
 
 function deliveryText(event: Extract<ChildEvent, { type: "delivery" }>): string {
-	return event.labelled === false ? event.text : `message_agent from_run_id=${event.from} name="peer"\n\n${event.text}`;
+	return event.labelled === false
+		? event.text
+		: `message_agent ${event.key ?? "from_run_id"}=${event.from} name="peer"\n\n${event.text}`;
 }
 
 function assistantEntries(event: Extract<ChildEvent, { type: "assistant" }>, id: string): unknown[] {
@@ -139,7 +149,7 @@ function assistantEntries(event: Extract<ChildEvent, { type: "assistant" }>, id:
 			type: "toolCall",
 			id: `${id}-call`,
 			name: "message_agent",
-			arguments: { target_run_id: event.send.to, text: event.send.text },
+			arguments: { [event.send.key ?? "target_run_id"]: event.send.to, text: event.send.text },
 		});
 	}
 	if (event.call !== undefined) {
