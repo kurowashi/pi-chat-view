@@ -1,8 +1,9 @@
 /**
  * Format compatibility: the sibling briefing is the only link between children,
  * so a silent change on pi-spawn's side would split one conversation into
- * several threads with no other symptom. These tests pin the signal that says
- * so, next to the formats this reader understands.
+ * several threads with no other symptom. These tests pin the formats this reader
+ * understands, the signal it raises when one moves on, and the older shapes a
+ * live conversation still produces.
  */
 
 import assert from "node:assert/strict";
@@ -57,5 +58,20 @@ test("a parsed briefing never reports a warning", () => {
 		assert.equal(thread?.id, "aaaaaaaa+bbbbbbbb");
 		assert.equal(thread?.unparsedBriefing, false);
 		assert.equal(readThread(dir, thread?.id ?? "")?.entries.length, 3);
+	});
+});
+
+test("an older pi-spawn that targets an agent name still shows the recipient", () => {
+	withDir((dir) => {
+		writeChildSession(dir, {
+			id: "aaaaaaaa",
+			start: "2026-09-29T04:00:00.000Z",
+			briefing: "sakura (bbbbbbbb)",
+			events: [{ type: "assistant", at: "2026-09-29T04:00:01.000Z", send: { to: "sakura", text: "hello sakura" } }],
+		});
+		writeChildSession(dir, { id: "bbbbbbbb", start: "2026-09-29T04:00:00.001Z", briefing: "nemu (aaaaaaaa)" });
+		const thread = readThread(dir, "aaaaaaaa+bbbbbbbb");
+		const statement = thread?.entries.find((entry) => entry.kind === "statement");
+		assert.equal(statement?.toLabel, "sakura");
 	});
 });

@@ -609,7 +609,7 @@ function toolEntry(
 		return { ...base, kind: "tool", text: "", summary: `${name} ${digest(args)}` };
 	}
 	const target = firstString(args["target_session_id"], args["target_run_id"], args["to"]);
-	const toLabel = labels.get(target);
+	const toLabel = resolveRecipient(target, labels);
 	return {
 		...base,
 		kind: "statement",
@@ -696,6 +696,20 @@ function unquote(token: string): string {
 function firstString(...values: readonly unknown[]): string {
 	for (const value of values) if (typeof value === "string") return value;
 	return "";
+}
+
+/**
+ * Who a statement was sent to.
+ *
+ * Older pi-spawn accepted an agent name as the target, so a target that names no
+ * id is still shown when it matches a participant's label.
+ */
+function resolveRecipient(target: string, labels: ReadonlyMap<string, string>): string | undefined {
+	if (target.length === 0) return undefined;
+	const byId = labels.get(target);
+	if (byId !== undefined) return byId;
+	for (const label of labels.values()) if (label === target) return label;
+	return undefined;
 }
 
 function finiteMs(value: number): number | undefined {
