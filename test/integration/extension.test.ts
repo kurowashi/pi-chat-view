@@ -151,6 +151,35 @@ test("the default port and directory come from the configuration", async () => {
 	});
 });
 
+test("a stop during startup closes the server that arrives afterwards", async () => {
+	const deferred: { resolve: (server: ViewServer) => void } = { resolve: () => {} };
+	const closed: string[] = [];
+	const session = createChatViewSession(
+		() =>
+			new Promise<ViewServer>((resolve) => {
+				deferred.resolve = resolve;
+			}),
+	);
+	const h = harness(() => {});
+	const starting = session.run("", h.ctx);
+	const stopping = session.stop();
+	deferred.resolve({
+		url: "http://127.0.0.1:1",
+		port: 1,
+		close: async () => {
+			closed.push("closed");
+		},
+	});
+	await Promise.all([starting, stopping]);
+	assert.deepEqual(closed, ["closed"], "the late server must not stay listening");
+	await session.run("stop", h.ctx);
+	assert.equal(
+		h.notifications.at(-1)?.message,
+		"pi-chat-view is not running",
+		"after the stop the session holds no server",
+	);
+});
+
 test("startup failures and unknown arguments are reported, not thrown", async () => {
 	const h = harness(() => {});
 	const failing = createChatViewSession(async () => {

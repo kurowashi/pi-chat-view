@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { extractBriefing, listThreads, readThread, type TimelineEntry } from "../../src/transcript.ts";
-import { writeChildSession } from "../helpers/child.ts";
+import { writeChildSession, writeParentSession } from "../helpers/child.ts";
 
 function withDir<T>(fn: (dir: string) => T): T {
 	const dir = mkdtempSync(join(tmpdir(), "pi-chat-view-"));
@@ -251,6 +251,74 @@ test("a forked child finds its briefing after the inherited conversation", () =>
 		const threads = listThreads(dir);
 		assert.equal(threads.length, 1);
 		assert.equal(threads[0]?.id, "ffffffff+gggggggg");
+	});
+});
+
+test("a forked child hides the inherited conversation and still joins its siblings", () => {
+	withDir((dir) => {
+		const inherited = Array.from({ length: 220 }, (_, index) => `p${String(index).padStart(4, "0")}`);
+		const parent = join(dir, "parent.jsonl");
+		writeParentSession(parent, inherited);
+		writeChildSession(dir, {
+			id: "ffffffff",
+			start: "2026-09-28T16:00:00.000Z",
+			parentSession: parent,
+			briefing: "peer (gggggggg)",
+			events: [
+				...inherited.map((id, index) => ({
+					type: "inherited" as const,
+					at: "2026-09-28T15:00:00.000Z",
+					id,
+					role: (index % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+					text: `parent message ${id}`,
+				})),
+				{ type: "assistant" as const, at: "2026-09-28T16:00:05.000Z", send: { to: "gggggggg", text: "hello peer" } },
+			],
+		});
+		writeChildSession(dir, {
+			id: "gggggggg",
+			start: "2026-09-28T16:00:00.001Z",
+			briefing: "fork (ffffffff)",
+			task: "listen",
+		});
+
+		const threads = listThreads(dir);
+		assert.equal(threads.length, 1, "the briefing after a long inherited prefix must still link the pair");
+		assert.equal(threads[0]?.id, "ffffffff+gggggggg");
+
+		const thread = readThread(dir, "ffffffff+gggggggg");
+		assert.ok(thread);
+		const texts = thread.entries.map((entry) => entry.text);
+		assert.ok(
+			!texts.some((text) => text.startsWith("parent message")),
+			"inherited history is the parent's, not the child's",
+		);
+		assert.deepEqual(texts, ["do the task", "listen", "hello peer"]);
+	});
+});
+
+test("a forked child whose parent file is gone is read best-effort", () => {
+	withDir((dir) => {
+		writeChildSession(dir, {
+			id: "hhhhhhhh",
+			start: "2026-09-28T17:00:00.000Z",
+			parentSession: join(dir, "gone.jsonl"),
+			briefing: "peer (iiiiiiii)",
+			events: [
+				{ type: "inherited", at: "2026-09-28T16:59:00.000Z", id: "p1", role: "user", text: "old parent line" },
+				{ type: "assistant", at: "2026-09-28T17:00:05.000Z", send: { to: "iiiiiiii", text: "hello peer" } },
+			],
+		});
+		writeChildSession(dir, {
+			id: "iiiiiiii",
+			start: "2026-09-28T17:00:00.001Z",
+			briefing: "gone (hhhhhhhh)",
+			task: "listen",
+		});
+		const threads = listThreads(dir);
+		assert.equal(threads.length, 1, "the scan keeps looking when the fork boundary cannot be proven");
+		const texts = readThread(dir, threads[0]?.id ?? "")?.entries.map((entry) => entry.text) ?? [];
+		assert.deepEqual(texts, ["old parent line", "do the task", "listen", "hello peer"]);
 	});
 });
 

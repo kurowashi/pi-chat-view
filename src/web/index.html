@@ -249,6 +249,7 @@
 			}
 
 			function clock(ms) {
+				if (!ms) return "—";
 				const date = new Date(ms);
 				const hh = String(date.getHours()).padStart(2, "0");
 				const mm = String(date.getMinutes()).padStart(2, "0");
@@ -271,6 +272,11 @@
 				return hash;
 			}
 
+			/** A stable key for a collapsible block, so a refresh keeps what the reader opened. */
+			function blockKey(entry, prefix) {
+				return `${entry.agent}:${entry.ts}:${prefix}:${entry.text.slice(0, 32)}`;
+			}
+
 			function detail(key, summary, body, className) {
 				const box = el("details", className);
 				if (state.open.has(key)) box.open = true;
@@ -283,9 +289,8 @@
 				return box;
 			}
 
-			function renderEntry(entry, index) {
-				const node = el("div", `entry ${entry.kind}`);
-				node.style.setProperty("--hue", hueOf(entry.agent));
+			function renderEntry(entry) {
+				const node = el("div", `entry ${entry.kind}`);				node.style.setProperty("--hue", hueOf(entry.agent));
 				const meta = el("div", "meta");
 				meta.append(el("span", "who", state.labels.get(entry.agent) ?? entry.agent));
 				meta.append(el("span", "time", clock(entry.ts)));
@@ -293,11 +298,11 @@
 
 				if (entry.kind === "thinking") {
 					const body = el("div", "text", entry.text);
-					node.append(detail(`${entry.agent}:${entry.ts}:t${index}`, `reasoning · ${entry.text.length} 字`, body, "reasoning"));
+					node.append(detail(blockKey(entry, "t"), `reasoning · ${entry.text.length} 字`, body, "reasoning"));
 					return node;
 				}
 				if (entry.kind === "instruction") {
-					node.append(detail(`${entry.agent}:${entry.ts}:i${index}`, `指示 · ${clock(entry.ts)}`, el("div", "text", entry.text)));
+					node.append(detail(blockKey(entry, "i"), `指示 · ${clock(entry.ts)}`, el("div", "text", entry.text)));
 					return node;
 				}
 				if (entry.kind === "tool") {
@@ -317,13 +322,13 @@
 					return;
 				}
 				let previous = 0;
-				thread.entries.forEach((entry, index) => {
+				for (const entry of thread.entries) {
 					if (previous > 0 && entry.ts - previous > 120000) {
 						timelineEl.append(el("div", "gap", gapText(entry.ts - previous)));
 					}
 					previous = entry.ts;
-					timelineEl.append(renderEntry(entry, index));
-				});
+					timelineEl.append(renderEntry(entry));
+				}
 				if (atBottom) timelineEl.scrollTop = timelineEl.scrollHeight;
 			}
 
@@ -371,6 +376,15 @@
 					await refreshThread();
 					statusEl.textContent = `更新 ${clock(Date.now())}`;
 				} catch (error) {
+					if (String(error.message).startsWith("unknown thread")) {
+						// The thread this URL names is gone: fall back to the newest one.
+						state.thread = null;
+						state.raw = null;
+						state.listRaw = null;
+						history.replaceState(null, "", location.pathname + location.search);
+						statusEl.textContent = "スレッドが見つかりません（削除された可能性があります）";
+						return;
+					}
 					statusEl.textContent = `接続できません: ${error.message}`;
 				}
 			}
@@ -382,8 +396,13 @@
 			});
 			state.thread = decodeURIComponent(location.hash.slice(1)) || null;
 			void refresh();
+			let tick = 0;
 			setInterval(() => {
-				if (!document.hidden) void refresh();
+				if (document.hidden) return;
+				// The open thread is the part that grows; the list changes only when a spawn starts.
+				tick += 1;
+				if (tick % 5 === 0) state.listRaw = null;
+				void refresh();
 			}, 1500);
 		</script>
 	</body>

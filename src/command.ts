@@ -6,6 +6,10 @@
  * implicit listener would be a hidden background process. The command is also
  * the stop switch, and session shutdown closes the socket no matter what the
  * user did in between.
+ *
+ * A start takes a moment, so the session tracks the start in flight as well as
+ * the running server. Stop and shutdown wait the start out and then close what
+ * it produced, which is what makes them meet in the same idempotent path.
  */
 
 import { join } from "node:path";
@@ -30,15 +34,17 @@ export interface ChatViewSession {
 
 export function createChatViewSession(start: Starter = startViewServer): ChatViewSession {
 	let server: ViewServer | undefined;
+	let pending: Promise<void> | undefined;
 
 	async function close(): Promise<void> {
+		await pending;
 		const running = server;
 		server = undefined;
 		await running?.close();
 	}
 
 	async function stop(ctx: ExtensionCommandContext): Promise<void> {
-		if (server === undefined) {
+		if (server === undefined && pending === undefined) {
 			ctx.ui.notify("pi-chat-view is not running", "info");
 			return;
 		}
@@ -50,13 +56,21 @@ export function createChatViewSession(start: Starter = startViewServer): ChatVie
 		const agentDir = getAgentDir();
 		const { config, warning } = readViewConfig(agentDir);
 		if (warning !== undefined) ctx.ui.notify(warning, "warning");
+		const attempt = start({ dir: join(agentDir, SPAWN_SESSIONS), port: config.port }).then(
+			(started) => {
+				server = started;
+				ctx.ui.notify(`pi-chat-view: ${started.url}`, "info");
+			},
+			(error: unknown) => {
+				ctx.ui.notify(`pi-chat-view failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			},
+		);
+		pending = attempt;
 		try {
-			server = await start({ dir: join(agentDir, SPAWN_SESSIONS), port: config.port });
-		} catch (error) {
-			ctx.ui.notify(`pi-chat-view failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-			return;
+			await attempt;
+		} finally {
+			if (pending === attempt) pending = undefined;
 		}
-		ctx.ui.notify(`pi-chat-view: ${server.url}`, "info");
 	}
 
 	return {
@@ -65,6 +79,10 @@ export function createChatViewSession(start: Starter = startViewServer): ChatVie
 			if (action === "stop") return stop(ctx);
 			if (action !== "" && action !== "start") {
 				ctx.ui.notify(USAGE, "warning");
+				return;
+			}
+			if (pending !== undefined) {
+				ctx.ui.notify("pi-chat-view is starting", "info");
 				return;
 			}
 			if (server !== undefined) {

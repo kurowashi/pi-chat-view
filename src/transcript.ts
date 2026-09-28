@@ -24,12 +24,14 @@ export const THREAD_LIMIT = 100;
 /** Bytes read per chunk while streaming a transcript. */
 const CHUNK_BYTES = 64 * 1024;
 
+/** Smaller chunks for the header scan, which stops in the first lines of a file. */
+const HEAD_CHUNK_BYTES = 8 * 1024;
+
 /** Bytes read from the end of a transcript to find its last timestamp. */
 const TAIL_BYTES = 8 * 1024;
 
 /** Upper bound on the header scan, so one broken file cannot stall a list request. */
 const MAX_HEAD_LINES = 200;
-
 /** The sibling list pi-spawn prepends to a child's task. */
 const BRIEFING_MARKER = "Siblings you can message with message_agent:";
 
@@ -61,6 +63,15 @@ export interface ChildFile {
 	createdMs: number;
 	lastMs: number;
 	refs: SiblingRef[];
+	/**
+	 * Index of the first message this run wrote.
+	 *
+	 * A child that inherited its parent's conversation (`inheritConversation`) owns
+	 * a copy of that history in its own file; those messages came from the parent
+	 * session and are not part of the child conversation. Zero when nothing was
+	 * inherited, or when the boundary could not be established.
+	 */
+	ownFrom: number;
 }
 
 export interface ThreadSummary {
@@ -103,7 +114,7 @@ export function readThread(dir: string, id: string): ThreadTimeline | undefined 
 	const thread = buildThreads(scanSpawnDir(dir)).find((candidate) => candidate.id === id);
 	if (thread === undefined) return undefined;
 	const labels = referenceLabels(thread.files);
-	const parsed = thread.files.map((file) => ({ file, messages: parseMessages(file.path) }));
+	const parsed = thread.files.map((file) => ({ file, messages: parseMessages(file.path).slice(file.ownFrom) }));
 	const outbound = outboundTexts(parsed);
 	const entries = parsed
 		.flatMap(({ file, messages }, fileIndex) =>
@@ -166,11 +177,12 @@ function scanSpawnDir(dir: string): ChildFile[] {
 		return [];
 	}
 	const files: ChildFile[] = [];
+	const parents: ParentIds = new Map();
 	for (const name of names) {
 		const id = fileIdOf(name);
 		if (id === undefined) continue;
 		try {
-			const file = scanChildFile(join(dir, name), id);
+			const file = scanChildFile(join(dir, name), id, parents);
 			if (file !== undefined) files.push(file);
 		} catch {
 			// A file can vanish between readdir and open; the next scan picks up the truth.
@@ -194,47 +206,118 @@ function fileIdOf(name: string): string | undefined {
  * sibling briefing are in the first lines, and the last timestamp is in the last
  * line. The body is read in full only when a thread is opened.
  */
-function scanChildFile(path: string, id: string): ChildFile | undefined {
-	const size = statSync(path).size;
-	const head = scanHead(path);
-	const createdMs = head.createdMs ?? timestampFromName(path) ?? size;
+function scanChildFile(path: string, id: string, parents: ParentIds): ChildFile | undefined {
+	const stat = statSync(path);
+	const head = scanHead(path, parents);
+	const createdMs = head.createdMs ?? timestampFromName(path) ?? stat.mtimeMs;
 	return {
 		id,
 		path,
 		createdMs,
-		lastMs: readTailTimestamp(path, size),
+		lastMs: readTailTimestamp(path, stat.size),
 		refs: head.refs,
+		ownFrom: head.ownFrom,
 	};
 }
 
-/** The session header and the sibling briefing, read without parsing the body. */
-function scanHead(path: string): { createdMs: number | undefined; refs: SiblingRef[] } {
-	let createdMs: number | undefined;
-	let refs: SiblingRef[] = [];
-	let forked = false;
-	let lines = 0;
-	forEachLine(path, (line) => {
-		lines += 1;
-		const entry = asRecord(parseJson(line));
-		if (entry === undefined) return lines < MAX_HEAD_LINES;
-		if (entry["type"] === "session") {
-			createdMs = finiteMs(Date.parse(String(entry["timestamp"] ?? "")));
-			forked = typeof entry["parentSession"] === "string";
+/** Entry ids per session file, so a forked prefix can be told apart from own messages. */
+type ParentIds = Map<string, Set<string> | undefined>;
+
+interface HeadScan {
+	createdMs: number | undefined;
+	refs: SiblingRef[];
+	ownFrom: number;
+}
+
+/** The session header, the sibling briefing, and where this run's own messages start. */
+function scanHead(path: string, parents: ParentIds): HeadScan {
+	const state: HeadState = { refs: [], ownFrom: -1, messages: 0, lines: 0 };
+	forEachLine(path, (line) => scanHeadLine(state, line, parents), HEAD_CHUNK_BYTES);
+	return { createdMs: state.createdMs, refs: state.refs, ownFrom: Math.max(state.ownFrom, 0) };
+}
+
+interface HeadState {
+	createdMs?: number | undefined;
+	refs: SiblingRef[];
+	parentPath?: string | undefined;
+	ownFrom: number;
+	messages: number;
+	lines: number;
+}
+
+/** One line of the header scan; returns false to stop reading. */
+function scanHeadLine(state: HeadState, line: string, parents: ParentIds): boolean {
+	const entry = asRecord(parseJson(line));
+	if (entry === undefined) return countScannedLine(state);
+	if (entry["type"] === "session") {
+		state.createdMs = finiteMs(Date.parse(String(entry["timestamp"] ?? "")));
+		state.parentPath = typeof entry["parentSession"] === "string" ? entry["parentSession"] : undefined;
+		return true;
+	}
+	if (entry["type"] !== "message") return true;
+	// A forked prefix can be arbitrarily long and proves nothing about this file.
+	// It still counts: the render path indexes the same message list.
+	if (isInherited(state, entry, parents)) {
+		state.messages += 1;
+		return true;
+	}
+	// A system message is prompt plumbing, not conversation: the run's own messages start later.
+	if (state.ownFrom < 0 && asRecord(entry["message"])?.["role"] !== "system") state.ownFrom = state.messages;
+	state.messages += 1;
+	if (!countScannedLine(state)) return false;
+	return !taskPromptStops(state, entry, parents);
+}
+
+/** Budget for how much of a file the scan reads before it gives up. */
+function countScannedLine(state: HeadState): boolean {
+	state.lines += 1;
+	return state.lines < MAX_HEAD_LINES;
+}
+
+function isInherited(state: HeadState, entry: Record<string, unknown>, parents: ParentIds): boolean {
+	return state.parentPath !== undefined && readEntryIds(state.parentPath, parents)?.has(String(entry["id"])) === true;
+}
+
+/**
+ * Record the sibling briefing when this line is a task prompt.
+ *
+ * The first user message a run wrote is its task, so its briefing cannot come
+ * later. Only a child whose parent file is gone has no provable boundary and
+ * keeps looking; for it the briefing may sit behind an inherited prefix.
+ */
+function taskPromptStops(state: HeadState, entry: Record<string, unknown>, parents: ParentIds): boolean {
+	const message = asRecord(entry["message"]);
+	if (message?.["role"] !== "user") return false;
+	const briefing = extractBriefing(textOf(message["content"]));
+	if (briefing.length > 0) {
+		state.refs = briefing;
+		return true;
+	}
+	return state.parentPath === undefined || readEntryIds(state.parentPath, parents) !== undefined;
+}
+
+/**
+ * The entry ids a session file contains.
+ *
+ * Undefined when the file cannot be read: the fork boundary is then unknown and
+ * the child is read best-effort instead of failing.
+ */
+function readEntryIds(path: string, cache: ParentIds): Set<string> | undefined {
+	if (cache.has(path)) return cache.get(path);
+	let ids: Set<string> | undefined;
+	try {
+		const found = new Set<string>();
+		forEachLine(path, (line) => {
+			const entry = asRecord(parseJson(line));
+			if (typeof entry?.["id"] === "string") found.add(entry["id"]);
 			return true;
-		}
-		if (entry["type"] !== "message") return lines < MAX_HEAD_LINES;
-		const message = asRecord(entry["message"]);
-		if (message?.["role"] !== "user") return lines < MAX_HEAD_LINES;
-		const text = textOf(message["content"]);
-		const briefing = extractBriefing(text);
-		if (briefing.length > 0) {
-			refs = briefing;
-			return false;
-		}
-		// A forked child carries the parent's conversation first, so the briefing is later.
-		return forked && lines < MAX_HEAD_LINES;
-	});
-	return { createdMs, refs };
+		});
+		ids = found;
+	} catch {
+		ids = undefined;
+	}
+	cache.set(path, ids);
+	return ids;
 }
 
 function readTailTimestamp(path: string, size: number): number {
@@ -259,10 +342,10 @@ function readTailTimestamp(path: string, size: number): number {
 }
 
 /** Stream a file line by line; the visitor returns false to stop early. */
-function forEachLine(path: string, visit: (line: string) => boolean): void {
+function forEachLine(path: string, visit: (line: string) => boolean, chunkBytes: number = CHUNK_BYTES): void {
 	const fd = openSync(path, "r");
 	const decoder = new StringDecoder("utf8");
-	const buffer = Buffer.allocUnsafe(CHUNK_BYTES);
+	const buffer = Buffer.allocUnsafe(chunkBytes);
 	let carry = "";
 	try {
 		for (;;) {
@@ -385,7 +468,7 @@ function parseMessages(path: string): ParsedMessage[] {
 		if (typeof role !== "string") return true;
 		messages.push({
 			role,
-			ts: finiteMs(Date.parse(String(entry["timestamp"] ?? ""))) ?? 0,
+			ts: finiteMs(Date.parse(String(entry["timestamp"] ?? ""))) ?? finiteMs(Number(message["timestamp"])) ?? 0,
 			content: message["content"],
 		});
 		return true;

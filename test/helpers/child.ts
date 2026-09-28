@@ -9,7 +9,7 @@
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export type ChildEvent =
 	| {
@@ -22,6 +22,8 @@ export type ChildEvent =
 			/** Any other tool call. */
 			call?: { name: string; args: Record<string, unknown> };
 	  }
+	/** A message copied from the parent's session, as `inheritConversation` writes it. */
+	| { type: "inherited"; at: string; id: string; role: "user" | "assistant"; text: string }
 	| { type: "delivery"; at: string; from: string; text: string; labelled?: boolean }
 	| { type: "prompt"; at: string; text: string }
 	| { type: "compaction"; at: string };
@@ -42,7 +44,7 @@ export interface ChildScript {
 
 export function writeChildSession(dir: string, script: ChildScript): string {
 	const path = join(dir, `${stampOf(script.start)}_${script.id}.jsonl`);
-	const entries: unknown[] = [
+	const setup: unknown[] = [
 		{
 			type: "session",
 			version: 3,
@@ -54,14 +56,43 @@ export function writeChildSession(dir: string, script: ChildScript): string {
 		{ type: "model_change", provider: "test", modelId: "test-model", timestamp: script.start },
 		{ type: "thinking_level_change", thinkingLevel: "low", timestamp: script.start },
 		messageEntry(script.start, "system", "", "sys"),
-		messageEntry(script.start, "user", briefingText(script), "task"),
 	];
-	script.events?.forEach((event, index) => {
-		entries.push(...eventEntries(event, index));
-	});
+	const events = (script.events ?? []).flatMap((event, index) => eventEntries(event, index));
+	// A forked child copies the parent's history first, so its own task comes after it.
+	const taskAt = script.parentSession === undefined ? 0 : lastInheritedIndex(script.events ?? []) + 1;
+	const entries = [
+		...setup,
+		...events.slice(0, taskAt),
+		messageEntry(script.start, "user", briefingText(script), "task"),
+		...events.slice(taskAt),
+	];
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 	return path;
+}
+
+/** Index of the last inherited event, or -1 when there is none. */
+function lastInheritedIndex(events: readonly ChildEvent[]): number {
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		if (events[index]?.type === "inherited") return index;
+	}
+	return -1;
+}
+
+/** Write the parent session a forked child copies its history from. */
+export function writeParentSession(path: string, ids: readonly string[]): void {
+	const entries: unknown[] = [
+		{ type: "session", version: 3, id: "parent-1", timestamp: "2026-09-28T00:00:00.000Z", cwd: "/tmp/project" },
+		...ids.map((id, index) => ({
+			type: "message",
+			id,
+			parentId: null,
+			timestamp: new Date(Date.parse("2026-09-28T00:00:01.000Z") + index).toISOString(),
+			message: { role: index % 2 === 0 ? "user" : "assistant", content: `parent message ${id}` },
+		})),
+	];
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
 /** The text a child's first user message carries: briefing, then the task. */
@@ -80,6 +111,17 @@ function eventEntries(event: ChildEvent, index: number): unknown[] {
 	const id = `e${index}`;
 	if (event.type === "prompt") return [messageEntry(event.at, "user", event.text, id)];
 	if (event.type === "compaction") return [{ type: "compaction", id, parentId: null, timestamp: event.at }];
+	if (event.type === "inherited") {
+		return [
+			{
+				type: "message",
+				id: event.id,
+				parentId: null,
+				timestamp: event.at,
+				message: { role: event.role, content: event.text, timestamp: Date.parse(event.at) },
+			},
+		];
+	}
 	if (event.type === "delivery") return [messageEntry(event.at, "user", deliveryText(event), id)];
 	return assistantEntries(event, id);
 }
