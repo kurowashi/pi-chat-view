@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Local secrets — never commit
+.env
+.env.*
+
+# Pi session/task state
+.pi/
+
+# Logs and OS noise
+*.log
+.DS_Store

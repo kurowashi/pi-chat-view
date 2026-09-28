@@ -1,0 +1,17 @@
+# Local gate. CI repeats every check: hooks are ergonomics, never the authority.
+min_version: 2.1.14
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format-and-lint
+      # --staged plus stage_fixed keeps lint-staged out of the dependency tree.
+      run: npx biome check --write --staged --no-errors-on-unmatched
+      stage_fixed: true
+    - name: typecheck
+      run: npx tsc --noEmit
+
+pre-push:
+  jobs:
+    - name: test
+      run: npm test

@@ -1,0 +1,71 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true,
+		"defaultBranch": "main"
+	},
+	"files": {
+		// TypeScript only. The web page is a shipped asset, not code this repo formats,
+		// and config files are validated by their own tools (npm, tsc, Biome schema).
+		"includes": ["src/**/*.ts", "test/**/*.ts"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 120,
+		"lineEnding": "lf"
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"correctness": {
+				"noUnusedImports": "error",
+				"noUnusedVariables": "error",
+				"noUnusedFunctionParameters": "error"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noConsole": "error"
+			},
+			"style": {
+				"noNonNullAssertion": "error",
+				"useImportType": "error",
+				"useConsistentTypeDefinitions": "error",
+				"useConst": "error"
+			},
+			"complexity": {
+				// Off because tsconfig sets noPropertyAccessFromIndexSignature: pointed the
+				// other way, the two rules together make index-signature access impossible.
+				"useLiteralKeys": "off",
+				"noExcessiveCognitiveComplexity": {
+					"level": "error",
+					"options": {
+						"maxAllowedComplexity": 12
+					}
+				}
+			},
+			"nursery": {
+				"noFloatingPromises": "error"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all",
+			"quoteProperties": "asNeeded"
+		}
+	}
+}

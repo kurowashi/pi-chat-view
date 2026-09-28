@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ja">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>pi-chat-view</title>
+		<style>
+			:root {
+				--bg: #f6f7f9;
+				--panel: #ffffff;
+				--line: #dfe3e8;
+				--text: #1c2126;
+				--muted: #6b7683;
+				--accent: #2f6feb;
+				--tint: 15%;
+				--quote-bg: #ffffff;
+				--code-bg: #eef1f5;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg: #14171a;
+					--panel: #1b1f24;
+					--line: #2c3238;
+					--text: #e6e9ee;
+					--muted: #9aa4b1;
+					--accent: #7aa2f7;
+					--tint: 22%;
+					--quote-bg: #1b1f24;
+					--code-bg: #22272e;
+				}
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+			}
+			body {
+				background: var(--bg);
+				color: var(--text);
+				font: 14px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+				display: grid;
+				grid-template-rows: auto 1fr;
+			}
+			header {
+				display: flex;
+				align-items: baseline;
+				gap: 16px;
+				padding: 10px 16px;
+				border-bottom: 1px solid var(--line);
+				background: var(--panel);
+			}
+			header h1 {
+				font-size: 15px;
+				margin: 0;
+				letter-spacing: 0.02em;
+			}
+			header .dir,
+			header .status {
+				color: var(--muted);
+				font-size: 12px;
+			}
+			header .status {
+				margin-left: auto;
+			}
+			header label {
+				font-size: 12px;
+				color: var(--muted);
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				cursor: pointer;
+			}
+			.body {
+				display: grid;
+				grid-template-columns: minmax(180px, 280px) 1fr;
+				min-height: 0;
+			}
+			nav {
+				border-right: 1px solid var(--line);
+				overflow-y: auto;
+				background: var(--panel);
+				padding: 8px;
+			}
+			nav button {
+				display: block;
+				width: 100%;
+				text-align: left;
+				border: 1px solid transparent;
+				border-radius: 6px;
+				background: none;
+				color: inherit;
+				font: inherit;
+				padding: 6px 8px;
+				cursor: pointer;
+			}
+			nav button:hover {
+				background: var(--code-bg);
+			}
+			nav button[aria-current="true"] {
+				border-color: var(--accent);
+				background: var(--code-bg);
+			}
+			nav .range {
+				font-variant-numeric: tabular-nums;
+				color: var(--muted);
+				font-size: 12px;
+			}
+			nav .names {
+				font-size: 13px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			nav .fresh {
+				color: #2ea043;
+			}
+			main {
+				overflow-y: auto;
+				padding: 16px clamp(12px, 4vw, 48px) 40vh;
+				min-height: 0;
+			}
+			.entry {
+				margin: 0 0 14px;
+			}
+			.entry .meta {
+				display: flex;
+				align-items: baseline;
+				gap: 8px;
+				font-size: 12px;
+				color: var(--muted);
+			}
+			.entry .who {
+				font-weight: 600;
+				color: hsl(var(--hue) 65% 45%);
+			}
+			@media (prefers-color-scheme: dark) {
+				.entry .who {
+					color: hsl(var(--hue) 70% 70%);
+				}
+			}
+			.entry .time {
+				font-variant-numeric: tabular-nums;
+			}
+			.entry .to {
+				color: var(--muted);
+			}
+			.entry .text {
+				white-space: pre-wrap;
+				overflow-wrap: anywhere;
+			}
+			.statement .text {
+				background: hsl(var(--hue) 70% 55% / var(--tint));
+				border-radius: 10px;
+				padding: 8px 12px;
+				margin-top: 2px;
+			}
+			.narration .text,
+			.instruction .text {
+				color: var(--muted);
+				border-left: 3px solid var(--line);
+				padding-left: 10px;
+			}
+			.instruction details,
+			.reasoning details {
+				border: 1px dashed var(--line);
+				border-radius: 8px;
+				padding: 4px 10px;
+				margin-top: 2px;
+			}
+			.reasoning .text {
+				color: var(--muted);
+				font-size: 13px;
+			}
+			.tool .summary,
+			.tool .meta {
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				font-size: 12px;
+				color: var(--muted);
+			}
+			.gap {
+				text-align: center;
+				color: var(--muted);
+				font-size: 12px;
+				margin: 18px 0;
+			}
+			.empty {
+				color: var(--muted);
+				padding: 40px 0;
+			}
+			body:not(.show-reasoning) .reasoning,
+			body:not(.show-tools) .tool {
+				display: none;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>pi-chat-view</h1>
+			<span class="dir" id="dir"></span>
+			<label><input type="checkbox" id="reasoning" /> reasoning</label>
+			<label><input type="checkbox" id="tools" /> tools</label>
+			<span class="status" id="status"></span>
+		</header>
+		<div class="body">
+			<nav id="threads"></nav>
+			<main id="timeline"></main>
+		</div>
+		<script>
+			const params = new URLSearchParams(location.search);
+			const state = { raw: null, listRaw: null, thread: null, open: new Set(), labels: new Map() };
+
+			const toggleReasoning = document.getElementById("reasoning");
+			const toggleTools = document.getElementById("tools");
+			toggleReasoning.checked = params.get("reasoning") === "1";
+			toggleTools.checked = params.get("tools") === "1";
+
+			function applyToggles() {
+				document.body.classList.toggle("show-reasoning", toggleReasoning.checked);
+				document.body.classList.toggle("show-tools", toggleTools.checked);
+				params.set("reasoning", toggleReasoning.checked ? "1" : "0");
+				params.set("tools", toggleTools.checked ? "1" : "0");
+				history.replaceState(null, "", `?${params}${location.hash}`);
+			}
+			toggleReasoning.addEventListener("change", applyToggles);
+			toggleTools.addEventListener("change", applyToggles);
+			applyToggles();
+
+			const threadsEl = document.getElementById("threads");
+			const timelineEl = document.getElementById("timeline");
+			const statusEl = document.getElementById("status");
+
+			async function getText(path) {
+				const response = await fetch(path, { cache: "no-store" });
+				if (!response.ok) {
+					const body = await response.json().catch(() => ({}));
+					throw new Error(body.error ?? `HTTP ${response.status}`);
+				}
+				return await response.text();
+			}
+
+			function el(tag, className, text) {
+				const node = document.createElement(tag);
+				if (className) node.className = className;
+				if (text !== undefined) node.textContent = text;
+				return node;
+			}
+
+			function clock(ms) {
+				const date = new Date(ms);
+				const hh = String(date.getHours()).padStart(2, "0");
+				const mm = String(date.getMinutes()).padStart(2, "0");
+				const ss = String(date.getSeconds()).padStart(2, "0");
+				const sameDay = new Date().toDateString() === date.toDateString();
+				const prefix = sameDay ? "" : `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")} `;
+				return `${prefix}${hh}:${mm}:${ss}`;
+			}
+
+			function gapText(ms) {
+				const minutes = Math.round(ms / 60000);
+				if (minutes < 60) return `— ${minutes}分後 —`;
+				const hours = Math.floor(minutes / 60);
+				return `— ${hours}時間${minutes % 60}分後 —`;
+			}
+
+			function hueOf(id) {
+				let hash = 0;
+				for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+				return hash;
+			}
+
+			function detail(key, summary, body, className) {
+				const box = el("details", className);
+				if (state.open.has(key)) box.open = true;
+				box.addEventListener("toggle", () => {
+					if (box.open) state.open.add(key);
+					else state.open.delete(key);
+				});
+				const head = el("summary", undefined, summary);
+				box.append(head, body);
+				return box;
+			}
+
+			function renderEntry(entry, index) {
+				const node = el("div", `entry ${entry.kind}`);
+				node.style.setProperty("--hue", hueOf(entry.agent));
+				const meta = el("div", "meta");
+				meta.append(el("span", "who", state.labels.get(entry.agent) ?? entry.agent));
+				meta.append(el("span", "time", clock(entry.ts)));
+				if (entry.toLabel) meta.append(el("span", "to", `→ ${entry.toLabel}`));
+
+				if (entry.kind === "thinking") {
+					const body = el("div", "text", entry.text);
+					node.append(detail(`${entry.agent}:${entry.ts}:t${index}`, `reasoning · ${entry.text.length} 字`, body, "reasoning"));
+					return node;
+				}
+				if (entry.kind === "instruction") {
+					node.append(detail(`${entry.agent}:${entry.ts}:i${index}`, `指示 · ${clock(entry.ts)}`, el("div", "text", entry.text)));
+					return node;
+				}
+				if (entry.kind === "tool") {
+					node.append(meta, el("div", "summary", entry.summary ?? ""));
+					return node;
+				}
+				node.append(meta, el("div", "text", entry.text));
+				return node;
+			}
+
+			function renderTimeline(thread) {
+				state.labels = new Map(thread.participants.map((p) => [p.id, p.agent ? `${p.label} (${p.agent})` : p.label]));
+				const atBottom = timelineEl.scrollTop + timelineEl.clientHeight >= timelineEl.scrollHeight - 60;
+				timelineEl.replaceChildren();
+				if (thread.entries.length === 0) {
+					timelineEl.append(el("div", "empty", "このスレッドにはまだ発話がありません。"));
+					return;
+				}
+				let previous = 0;
+				thread.entries.forEach((entry, index) => {
+					if (previous > 0 && entry.ts - previous > 120000) {
+						timelineEl.append(el("div", "gap", gapText(entry.ts - previous)));
+					}
+					previous = entry.ts;
+					timelineEl.append(renderEntry(entry, index));
+				});
+				if (atBottom) timelineEl.scrollTop = timelineEl.scrollHeight;
+			}
+
+			function renderThreads(threads) {
+				threadsEl.replaceChildren();
+				for (const thread of threads) {
+					const button = el("button");
+					button.setAttribute("aria-current", String(thread.id === state.thread));
+					const fresh = Date.now() - thread.lastMs < 90000 ? " ●" : "";
+					button.append(el("div", "range", `${clock(thread.firstMs).slice(-5)} – ${clock(thread.lastMs).slice(-5)}${fresh}`));
+					button.append(el("div", "names", thread.participants.map((p) => p.label).join(" · ")));
+					button.addEventListener("click", () => {
+						location.hash = thread.id;
+					});
+					threadsEl.append(button);
+				}
+			}
+
+			async function refreshList() {
+				const text = await getText("/api/threads");
+				if (text === state.listRaw) return JSON.parse(text);
+				state.listRaw = text;
+				const data = JSON.parse(text);
+				document.getElementById("dir").textContent = data.dir;
+				renderThreads(data.threads);
+				if (state.thread === null) {
+					const first = data.threads[0];
+					if (first) location.hash = first.id;
+					else timelineEl.replaceChildren(el("div", "empty", `子セッションがありません: ${data.dir}`));
+				}
+				return data;
+			}
+
+			async function refreshThread() {
+				if (state.thread === null) return;
+				const text = await getText(`/api/thread/${encodeURIComponent(state.thread)}`);
+				if (text === state.raw) return;
+				state.raw = text;
+				renderTimeline(JSON.parse(text));
+			}
+
+			async function refresh() {
+				try {
+					await refreshList();
+					await refreshThread();
+					statusEl.textContent = `更新 ${clock(Date.now())}`;
+				} catch (error) {
+					statusEl.textContent = `接続できません: ${error.message}`;
+				}
+			}
+
+			window.addEventListener("hashchange", () => {
+				state.thread = decodeURIComponent(location.hash.slice(1)) || null;
+				state.raw = null;
+				void refresh();
+			});
+			state.thread = decodeURIComponent(location.hash.slice(1)) || null;
+			void refresh();
+			setInterval(() => {
+				if (!document.hidden) void refresh();
+			}, 1500);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,32 @@
+{
+	"compilerOptions": {
+		/* Runtime: Node native type stripping. No build step, no emit, no path aliases. */
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "es2024",
+		"lib": ["es2024"],
+		"types": ["node"],
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"isolatedModules": true,
+		"moduleDetection": "force",
+		"skipLibCheck": true,
+
+		/* Strictness. Every flag below is load-bearing; none is stylistic. */
+		"strict": true,
+		"exactOptionalPropertyTypes": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"useUnknownInCatchVariables": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"allowUnreachableCode": false,
+		"allowUnusedLabels": false
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}
