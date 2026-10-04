@@ -13,7 +13,7 @@ export const CONFIG_FILE = "chat-view.json";
 
 export const DEFAULT_PORT = 7787;
 
-export interface ViewConfig {
+interface ViewConfig {
 	port: number;
 }
 

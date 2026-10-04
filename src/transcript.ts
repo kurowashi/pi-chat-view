@@ -39,10 +39,10 @@ const BRIEFING_MARKER = "Siblings you can message with message_agent:";
 const DELIVERY_HEADER = /^message_agent from_(?:run|session)_id=\S+ name=(?:"(?:[^"\\]|\\.)*"|[^\n]+)\n\n/;
 
 /** What one timeline line is: sibling speech, the agent's prose, its reasoning, a task, or a tool call. */
-export type EntryKind = "statement" | "narration" | "thinking" | "instruction" | "tool";
+type EntryKind = "statement" | "narration" | "thinking" | "instruction" | "tool";
 
 /** One agent's display identity inside a thread. */
-export interface Participant {
+interface Participant {
 	/** Session id, which is the run id of the run that created the file. */
 	id: string;
 	label: string;
@@ -57,7 +57,7 @@ export interface SiblingRef {
 }
 
 /** One child transcript file. */
-export interface ChildFile {
+interface ChildFile {
 	id: string;
 	path: string;
 	createdMs: number;

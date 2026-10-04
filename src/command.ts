@@ -21,9 +21,9 @@ export const COMMAND_DESCRIPTION =
 	"Start the pi-chat-view web server (/chat-view status shows it, /chat-view stop stops it)";
 
 /** pi-spawn writes its child transcripts here, next to the Pi agent directory. */
-export const SPAWN_SESSIONS = "spawn-sessions";
+const SPAWN_SESSIONS = "spawn-sessions";
 
-export const USAGE = "usage: /chat-view [start|stop|status]";
+const USAGE = "usage: /chat-view [start|stop|status]";
 
 /** The `/chat-view status` report: the runtime state and the port in effect. */
 function statusText(server: ViewServer | undefined, starting: boolean, agentDir: string): string {

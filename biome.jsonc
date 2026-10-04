@@ -32,11 +32,13 @@
 			"correctness": {
 				"noUnusedImports": "error",
 				"noUnusedVariables": "error",
-				"noUnusedFunctionParameters": "error"
+				"noUnusedFunctionParameters": "error",
+				"noUndeclaredDependencies": "error"
 			},
 			"suspicious": {
 				"noExplicitAny": "error",
-				"noConsole": "error"
+				"noConsole": "error",
+				"noImportCycles": "error"
 			},
 			"style": {
 				"noNonNullAssertion": "error",

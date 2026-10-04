@@ -22,6 +22,7 @@ const ALLOWED_DEV_DEPENDENCIES = new Set([
 	"@biomejs/biome",
 	"@earendil-works/pi-coding-agent",
 	"@types/node",
+	"knip",
 	"lefthook",
 	"typescript",
 ]);

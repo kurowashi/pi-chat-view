@@ -22,14 +22,16 @@
 		"@biomejs/biome": "2.5.14",
 		"@earendil-works/pi-coding-agent": "0.87.1",
 		"@types/node": "^24.0.0",
+		"knip": "6.39.0",
 		"lefthook": "2.1.14",
 		"typescript": "7.0.2"
 	},
 	"scripts": {
 		"check": "biome check . && tsc --noEmit",
 		"fix": "biome check --write .",
+		"knip": "knip --no-config-hints",
 		"test": "node --test \"test/**/*.test.ts\"",
 		"test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=80 --test-coverage-functions=80 \"test/unit/**/*.test.ts\" \"test/integration/**/*.test.ts\"",
-		"verify": "npm run check && npm test && npm run test:coverage"
+		"verify": "npm run check && npm run knip && npm test && npm run test:coverage"
 	}
 }

@@ -10,7 +10,7 @@
 
 ## 完了条件
 
-`npm run verify`（= `npm run check` + `npm test` + `npm run test:coverage`）が通ること。
+`npm run verify`（= `npm run check` + `npm run knip` + `npm test` + `npm run test:coverage`）が通ること。
 フックが通っても CI が通らなければ未完了です。
 CI は同じ `verify` を Node 22.19 / 24 で実行します。
 カバレッジは `test/unit` と `test/integration` で計測します。
@@ -78,6 +78,9 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 |---|---|---|
 | 実行時依存を持たない（`dependencies` を持たない） | `test/contract/dependencies.test.ts` | `package.json` |
 | `src` の import は node builtin / 相対 `.ts` / Pi 提供パッケージの3種のみ | `test/contract/dependencies.test.ts` | `test/contract/dependencies.test.ts` の `ALLOWED_PEER_DEPENDENCIES` |
+| 循環依存を作らない | `npx biome check .` | `biome.jsonc` の `noImportCycles` |
+| 未宣言の依存を import しない（import 元パッケージの `package.json` へ先に宣言する） | `npx biome check .` | `biome.jsonc` の `noUndeclaredDependencies` |
+| 未使用の export・依存・ファイルを検出しない | `npm run knip` | `knip.jsonc` |
 | devDependency は allowlist 内のみ | `test/contract/dependencies.test.ts` | `test/contract/dependencies.test.ts` の `ALLOWED_DEV_DEPENDENCIES` |
 | 公開物は `files` の whitelist と一致し、`src/web/index.html` を含む | `test/ci/package-contents.test.ts` | `package.json` の `files` |
 
