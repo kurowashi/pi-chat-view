@@ -190,7 +190,7 @@ test("startup failures and unknown arguments are reported, not thrown", async ()
 	assert.deepEqual(h.notifications.at(-1), { message: "pi-chat-view failed: port 1 is already in use", type: "error" });
 
 	await failing.run("bogus", h.ctx);
-	assert.deepEqual(h.notifications.at(-1), { message: "usage: /chat-view [stop]", type: "warning" });
+	assert.deepEqual(h.notifications.at(-1), { message: "usage: /chat-view [start|stop|status]", type: "warning" });
 });
 
 test("a real server rejects an occupied port through the command", async () => {
@@ -227,5 +227,62 @@ test("an injected server is started and closed by the session", async () => {
 		assert.ok(await reachable(url));
 		await session.stop();
 		assert.equal(await reachable(url), false);
+	});
+});
+
+test("status reports the port in effect and the running server", async () => {
+	await withAgentDir(async (agentDir) => {
+		const h = harness(chatViewExtension);
+		const config = join(agentDir, CONFIG_FILE);
+		await h.run("status");
+		assert.deepEqual(h.notifications.at(-1), {
+			message: `pi-chat-view: stopped\nport: 7787\nconfig: ${config}`,
+			type: "info",
+		});
+
+		const port = await freePort();
+		writeFileSync(config, JSON.stringify({ port }));
+		try {
+			await h.run("start");
+			await h.run("status");
+			assert.equal(
+				h.notifications.at(-1)?.message,
+				`pi-chat-view: running at http://127.0.0.1:${port}\nport: ${port}\nconfig: ${config}`,
+			);
+		} finally {
+			await h.emit("session_shutdown");
+		}
+	});
+});
+
+test("status reports a broken config instead of hiding it", async () => {
+	await withAgentDir(async (agentDir) => {
+		writeFileSync(join(agentDir, CONFIG_FILE), "{");
+		const h = harness(chatViewExtension);
+		await h.run("status");
+		const message = h.notifications.at(-1)?.message ?? "";
+		assert.match(message, /^pi-chat-view: stopped$/m);
+		assert.match(message, /^port: 7787$/m);
+		assert.match(message, /^warning: chat-view\.json: invalid JSON/m);
+	});
+});
+
+test("status reports a start in flight", async () => {
+	await withAgentDir(async () => {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const session = createChatViewSession(async () => {
+			await gate;
+			return { url: "http://127.0.0.1:0", port: 0, close: async () => {} };
+		});
+		const h = harness(() => {});
+		const starting = session.run("", h.ctx);
+		await session.run("status", h.ctx);
+		assert.match(h.notifications.at(-1)?.message ?? "", /^pi-chat-view: starting$/m);
+		release?.();
+		await starting;
+		await session.stop();
 	});
 });

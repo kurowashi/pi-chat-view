@@ -29,6 +29,7 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 | 停止は冪等（shutdown と `/chat-view stop` が同じ経路に収束する） | `test/integration/extension.test.ts` | `src/command.ts` の `close` |
 | 起動中に届いた停止も、起動したサーバーを閉じる | `test/integration/extension.test.ts` | `src/command.ts` の `pending` |
 | 起動失敗と不明な引数は例外にせず通知する | `test/integration/extension.test.ts` | `src/command.ts` の `run` |
+| `/chat-view status` は稼働状態、使用ポート、設定ファイルを通知し、不正な設定は警告行で示す | `test/integration/extension.test.ts` | `src/command.ts` の `statusText` |
 
 ### サーバー
 

@@ -14,15 +14,28 @@
 
 import { join } from "node:path";
 import { type ExtensionAPI, type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { readViewConfig } from "./config.ts";
+import { CONFIG_FILE, readViewConfig } from "./config.ts";
 import { startViewServer, type ViewServer, type ViewServerOptions } from "./server.ts";
 
-export const COMMAND_DESCRIPTION = "Start the pi-chat-view web server (/chat-view stop to stop it)";
+export const COMMAND_DESCRIPTION =
+	"Start the pi-chat-view web server (/chat-view status shows it, /chat-view stop stops it)";
 
 /** pi-spawn writes its child transcripts here, next to the Pi agent directory. */
 export const SPAWN_SESSIONS = "spawn-sessions";
 
-export const USAGE = "usage: /chat-view [stop]";
+export const USAGE = "usage: /chat-view [start|stop|status]";
+
+/** The `/chat-view status` report: the runtime state and the port in effect. */
+function statusText(server: ViewServer | undefined, starting: boolean, agentDir: string): string {
+	const file = join(agentDir, CONFIG_FILE);
+	if (server !== undefined) {
+		return [`pi-chat-view: running at ${server.url}`, `port: ${server.port}`, `config: ${file}`].join("\n");
+	}
+	const { config, warning } = readViewConfig(agentDir);
+	const lines = [`pi-chat-view: ${starting ? "starting" : "stopped"}`, `port: ${config.port}`, `config: ${file}`];
+	if (warning !== undefined) lines.push(`warning: ${warning}`);
+	return lines.join("\n");
+}
 
 type Starter = (options: ViewServerOptions) => Promise<ViewServer>;
 
@@ -77,6 +90,10 @@ export function createChatViewSession(start: Starter = startViewServer): ChatVie
 		async run(args, ctx) {
 			const action = args.trim();
 			if (action === "stop") return stop(ctx);
+			if (action === "status") {
+				ctx.ui.notify(statusText(server, pending !== undefined, getAgentDir()), "info");
+				return;
+			}
 			if (action !== "" && action !== "start") {
 				ctx.ui.notify(USAGE, "warning");
 				return;

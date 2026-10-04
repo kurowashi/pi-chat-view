@@ -81,6 +81,7 @@ ref を固定する場合は `pi install git:github.com/kurowashi/pi-chat-view@<
 | `/chat-view` | サーバーを起動し、URL を通知します |
 | `/chat-view start` | `/chat-view` と同じ |
 | `/chat-view stop` | サーバーを停止します |
+| `/chat-view status` | 稼働状態、使用ポート、設定ファイルを表示します |
 
 起動済みのときに `/chat-view` を実行すると、URL を再表示します。
 起動中に実行した場合は、起動中であることを通知します。
