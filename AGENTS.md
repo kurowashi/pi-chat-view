@@ -16,6 +16,16 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 カバレッジは `test/unit` と `test/integration` で計測します。
 下の表の「検証」列は個別の検証箇所であり、自動検証はすべて `verify` に含まれます。
 
+## ローカル開発
+
+- `npm install`: 依存を入れる。実行時依存はない（`dependencies` を持たない）。
+- `npx lefthook install`: git フックを有効にする。手動で実行する。
+  `package.json` の lifecycle script（`prepare` / `postinstall`）には置かない。
+  `pi install git:...` は `npm install --omit=dev` を実行するため、devDependency の lefthook が無い状態で script が走るとインストールごと失敗する。
+- フックは利便性のためのもの。完了条件は常に `npm run verify`。CI はフックと同じ検査を独立に実行する。
+- `npm run fix`: biome の自動修正。
+- `npm test`: 全テスト。`npm run test:coverage`: unit と integration だけをカバレッジ閾値付きで実行する。
+
 ## 制約
 
 ### 拡張の面
