@@ -94,14 +94,6 @@ CI は同じ `verify` を Node 22.19 / 24 で実行します。
 | devDependency は allowlist 内のみ | `test/contract/dependencies.test.ts` | `test/contract/dependencies.test.ts` の `ALLOWED_DEV_DEPENDENCIES` |
 | 公開物は `files` の whitelist と一致し、`src/web/index.html` を含む | `test/ci/package-contents.test.ts` | `package.json` の `files` |
 
-## 手動で確認する範囲
+## 手動確認
 
-自動テストで代替できないため、変更時は次を手元で確認します。結果は PR の本文に残します。
-
-| 確認 | 手順 |
-|---|---|
-| 実データの表示 | 実際の spawn を1回行い、`/chat-view` でスレッド一覧とタイムラインが出ること |
-| 実行中の追記 | 子が動いている間にブラウザを開き、新しい発言が1.5秒以内に現れること |
-| 終了時の停止 | Pi を終了した後に URL が開けなくなること |
-| 表示の崩れ | 長文・改行・引用符・絵文字を含む発言が崩れず、HTML として解釈されないこと |
-| 分岐 | `resume_entry_id` で過去の位置から再開し、破棄した分岐が表示されないこと |
+自動検証の対象外の確認は [docs/manual-checks.md](docs/manual-checks.md) に書きます。
